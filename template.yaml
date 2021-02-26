@@ -1,0 +1,140 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  sam-lookout-for-metrics-preview
+
+  Sample SAM Template for sam-lookout-for-metrics-preview
+
+Parameters:
+  UserPoolId:
+    Type: String
+    Description: User poolID for Cognito provider
+  ClientId:
+    Type: String
+    Description: Client id for user pool
+  AllowOrigin:
+    Type: String
+    Description: HTTP API CORS - AllowOrigin
+
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Function:
+    Timeout: 3
+
+Resources:
+
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      Auth:
+        Authorizers:
+          GeneralAuth:
+            AuthorizationScopes:
+              - aws.cognito.signin.user.admin # This scope is returned by Amplify with congito, use: headers: { Authorization: `Bearer ${(await Auth.currentSession()).getAccessToken().getJwtToken()}` }, 
+            IdentitySource: "$request.header.Authorization"
+            JwtConfiguration:
+              issuer: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPoolId}
+              audience:
+                - !Ref ClientId
+      CorsConfiguration:
+        AllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        AllowHeaders:
+          - Content-Type
+          - X-Amz-Date
+          - Authorization
+          - X-Amz-Security-Token
+        AllowOrigins:
+          - !Ref AllowOrigin
+
+  Boto3Layer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      ContentUri: ./boto3_layer
+      CompatibleRuntimes:
+        - python3.8
+    Metadata:
+      BuildMethod: makefile
+  ListDetectorsFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      CodeUri: code/
+      Handler: app.list_detectors
+      Runtime: python3.8
+      Layers:
+        - !Ref Boto3Layer
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - lookoutmetrics:*
+              Resource: '*'
+      Events:
+        HelloWorld:
+          Type: HttpApi # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
+          Properties:
+            Path: /list-detectors
+            Method: get
+            ApiId: !Ref HttpApi
+            Auth:
+              Authorizer: GeneralAuth
+  ListAnomalyGroupSummariesFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      CodeUri: code/
+      Handler: app.list_anomaly_group_summaries
+      Runtime: python3.8
+      Layers:
+        - !Ref Boto3Layer
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - lookoutmetrics:*
+              Resource: '*'
+      Events:
+        HelloWorld:
+          Type: HttpApi # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
+          Properties:
+            Path: /list-anomaly-group-summaries/{AnomalyDetectorArn}
+            Method: get
+            ApiId: !Ref HttpApi
+            Auth:
+              Authorizer: GeneralAuth
+  ListAnomalyGroupTimeSeriesFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      CodeUri: code/
+      Handler: app.list_anomaly_group_time_series
+      Runtime: python3.8
+      Layers:
+        - !Ref Boto3Layer
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - lookoutmetrics:*
+              Resource: '*'
+      Events:
+        HelloWorld:
+          Type: HttpApi # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
+          Properties:
+            Path: /list-anomaly-group-time-series/{AnomalyDetectorArn}/{AnomalyGroupId}/{MetricName}
+            Method: get
+            ApiId: !Ref HttpApi
+            Auth:
+              Authorizer: GeneralAuth
+
+Outputs:
+  # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
+  # Find out more about other implicit resources you can reference within SAM
+  # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
+  HttpApiUrl:
+    Description: URL of your API endpoint
+    Value:
+      Fn::Sub: 'https://${HttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/'
